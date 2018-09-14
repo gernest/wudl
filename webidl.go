@@ -58,7 +58,7 @@ const (
 	EndExtendedAttribute
 )
 
-func (p *Parser) Parse(fset *token.FileSet, filename string, src []byte) {
+func (p *Parser) Parse(fset *token.FileSet, filename string, src []byte) error {
 	var s scanner.Scanner
 	file := fset.AddFile(filename, fset.Base(), len(src))
 	s.Init(file, src, p.handleScanError, scanner.ScanComments)
@@ -66,9 +66,12 @@ func (p *Parser) Parse(fset *token.FileSet, filename string, src []byte) {
 	var state State
 	var nest int
 	for {
+		if p.err != nil {
+			return p.err
+		}
 		tok := p.next()
 		if tok.Tok == token.EOF {
-			break
+			return nil
 		}
 		switch tok.Tok {
 		case token.LBRACK:
@@ -80,11 +83,16 @@ func (p *Parser) Parse(fset *token.FileSet, filename string, src []byte) {
 		case token.RBRACK:
 			state = EndExtendedAttribute
 			nest++
+		case token.COMMA:
+			if state == OpenExtendedAttribute {
+				continue
+			}
 		}
 		switch state {
 		case OpenExtendedAttribute:
 			p.parseAttribute()
 		case EndExtendedAttribute:
+			state = 0
 			p.nodes = append(p.nodes, p.current)
 			p.current = nil
 		}
@@ -110,31 +118,31 @@ func (p *Parser) parseAttribute() {
 			n.pos = x.Pos
 			n.end = next.Pos
 			if v, ok := p.current.(*ExtendedAttributeList); ok {
-				v.List = append(v.List, v)
+				v.List = append(v.List, n)
 			}
 		}
 	}
 }
 
-type xnode struct {
+type position struct {
 	pos token.Pos
 	end token.Pos
 }
 
-func (e xnode) Pos() token.Pos {
+func (e position) Pos() token.Pos {
 	return e.pos
 }
-func (e xnode) End() token.Pos {
+func (e position) End() token.Pos {
 	return e.end
 }
 
 type ExtendedAttributeList struct {
-	xnode
+	position
 	List []Node
 }
 
 type ExtendedAttributeNoArgs struct {
-	xnode
+	position
 	Indent string
 }
 
@@ -143,6 +151,7 @@ func (p *Parser) next() *Token {
 		// If we callend rewind1, we return the rewind token and skip scanning. We are
 		// setting rewind to nil so next p.next call will do a scan.
 		x := p.rewind
+		p.rewind = nil
 		return x
 	}
 	pos, tok, lit := p.scanner.Scan()
