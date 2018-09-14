@@ -30,6 +30,11 @@ func IsKeyword(ident string) bool {
 	return keywords[ident]
 }
 
+type Node interface {
+	Pos() token.Pos
+	End() token.Pos
+}
+
 type Parser struct {
 	scanner *scanner.Scanner
 }
