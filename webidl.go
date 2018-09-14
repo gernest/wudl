@@ -44,24 +44,113 @@ type Token struct {
 type Parser struct {
 	scanner *scanner.Scanner
 	err     scanner.ErrorList
+	nodes   []Node
+	current Node
+	rewind  *Token
 }
+
+type State uint
+
+const (
+	OpenInterface = 1 << iota
+	EndInterface
+	OpenExtendedAttribute
+	EndExtendedAttribute
+)
 
 func (p *Parser) Parse(fset *token.FileSet, filename string, src []byte) {
 	var s scanner.Scanner
 	file := fset.AddFile(filename, fset.Base(), len(src))
 	s.Init(file, src, p.handleScanError, scanner.ScanComments)
 	p.scanner = &s
+	var state State
+	var nest int
 	for {
 		tok := p.next()
 		if tok.Tok == token.EOF {
 			break
 		}
+		switch tok.Tok {
+		case token.LBRACK:
+			state = OpenExtendedAttribute
+			nest++
+			x := &ExtendedAttributeList{}
+			x.pos = tok.Pos
+			p.current = x
+		case token.RBRACK:
+			state = EndExtendedAttribute
+			nest++
+		}
+		switch state {
+		case OpenExtendedAttribute:
+			p.parseAttribute()
+		case EndExtendedAttribute:
+			p.nodes = append(p.nodes, p.current)
+			p.current = nil
+		}
 	}
 }
 
-func (p *Parser) next() Token {
+func (p *Parser) peek() *Token {
+	x := p.next()
+	p.revind1(x)
+	return x
+}
+
+func (p *Parser) parseAttribute() {
+	x := p.next()
+	switch x.Tok {
+	case token.IDENT:
+		next := p.peek()
+		switch next.Tok {
+		case token.COMMA, token.RBRACK:
+			n := ExtendedAttributeNoArgs{
+				Indent: x.Text,
+			}
+			n.pos = x.Pos
+			n.end = next.Pos
+			if v, ok := p.current.(*ExtendedAttributeList); ok {
+				v.List = append(v.List, v)
+			}
+		}
+	}
+}
+
+type xnode struct {
+	pos token.Pos
+	end token.Pos
+}
+
+func (e xnode) Pos() token.Pos {
+	return e.pos
+}
+func (e xnode) End() token.Pos {
+	return e.end
+}
+
+type ExtendedAttributeList struct {
+	xnode
+	List []Node
+}
+
+type ExtendedAttributeNoArgs struct {
+	xnode
+	Indent string
+}
+
+func (p *Parser) next() *Token {
+	if p.rewind != nil {
+		// If we callend rewind1, we return the rewind token and skip scanning. We are
+		// setting rewind to nil so next p.next call will do a scan.
+		x := p.rewind
+		return x
+	}
 	pos, tok, lit := p.scanner.Scan()
-	return Token{Pos: pos, Tok: tok, Text: lit}
+	return &Token{Pos: pos, Tok: tok, Text: lit}
+}
+
+func (p *Parser) revind1(tok *Token) {
+	p.rewind = tok
 }
 
 func (p *Parser) handleScanError(pos token.Position, msg string) {
