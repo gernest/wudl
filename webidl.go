@@ -51,6 +51,12 @@ func (p *Parser) Parse(fset *token.FileSet, filename string, src []byte) {
 	file := fset.AddFile(filename, fset.Base(), len(src))
 	s.Init(file, src, p.handleScanError, scanner.ScanComments)
 	p.scanner = &s
+	for {
+		tok := p.next()
+		if tok.Tok == token.EOF {
+			break
+		}
+	}
 }
 
 func (p *Parser) next() Token {
