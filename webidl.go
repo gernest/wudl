@@ -35,13 +35,32 @@ type Node interface {
 	End() token.Pos
 }
 
+type Token struct {
+	Pos  token.Pos
+	Tok  token.Token
+	Text string
+}
+
 type Parser struct {
 	scanner *scanner.Scanner
+	err     scanner.ErrorList
 }
 
 func (p *Parser) Parse(fset *token.FileSet, filename string, src []byte) {
 	var s scanner.Scanner
 	file := fset.AddFile(filename, fset.Base(), len(src))
-	s.Init(file, src, nil, scanner.ScanComments)
+	s.Init(file, src, p.handleScanError, scanner.ScanComments)
 	p.scanner = &s
+}
+
+func (p *Parser) next() Token {
+	pos, tok, lit := p.scanner.Scan()
+	return Token{Pos: pos, Tok: tok, Text: lit}
+}
+
+func (p *Parser) handleScanError(pos token.Position, msg string) {
+	p.err = append(p.err, &scanner.Error{
+		Pos: pos,
+		Msg: msg,
+	})
 }
