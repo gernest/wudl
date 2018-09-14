@@ -60,20 +60,27 @@ const (
 	EndArgs
 )
 
-func (p *Parser) Parse(fset *token.FileSet, filename string, src []byte) error {
+func (p *Parser) Parse(fset *token.FileSet, filename string, src []byte) ([]Node, error) {
 	var s scanner.Scanner
 	file := fset.AddFile(filename, fset.Base(), len(src))
 	s.Init(file, src, p.handleScanError, scanner.ScanComments)
 	p.scanner = &s
+	p.err = nil
+	p.current = nil
+	p.rewind = nil
+	p.nodes = nil
 	var state State
 	var nest int
 	for {
 		if p.err != nil {
-			return p.err
+			return nil, p.err
 		}
 		tok := p.next()
 		if tok.Tok == token.EOF {
-			return nil
+			if p.err != nil {
+				return nil, p.err
+			}
+			return p.nodes, nil
 		}
 		switch tok.Tok {
 		case token.LBRACK:
@@ -101,6 +108,10 @@ func (p *Parser) Parse(fset *token.FileSet, filename string, src []byte) error {
 	}
 }
 
+func (p *Parser) Ast() []Node {
+	return p.nodes
+}
+
 func (p *Parser) peek() *Token {
 	x := p.next()
 	p.revind1(x)
@@ -123,7 +134,7 @@ func (p *Parser) parseAttribute() {
 		next := p.peek()
 		switch next.Tok {
 		case token.COMMA, token.RBRACK:
-			n := ExtendedAttributeNoArgs{
+			n := &ExtendedAttributeNoArgs{
 				Ident: x.Text,
 			}
 			n.pos = x.Pos
@@ -215,7 +226,7 @@ func (p *Parser) parseAttribute() {
 			}
 		case token.LPAREN:
 			p.next()
-			n := ExtendedAttributeArgList{
+			n := &ExtendedAttributeArgList{
 				Ident: x.Text,
 			}
 			n.pos = x.Pos
